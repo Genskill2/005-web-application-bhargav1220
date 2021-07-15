@@ -3,6 +3,7 @@ import datetime
 from flask import Blueprint
 from flask import render_template, request, redirect, url_for, jsonify
 from flask import g
+from flask.json.tag import TagDict
 
 from . import db
 
@@ -18,8 +19,18 @@ def format_date(d):
 
 @bp.route("/search/<field>/<value>")
 def search(field, value):
-    # TBD
-    return ""
+    conn = db.get_db()
+    cursor = conn.cursor()
+    oby = request.args.get("order_by", "id") # TODO. This is currently not used. 
+    order = request.args.get("order", "asc")
+    cursor.execute("select id from tag where name = ?", [value]);
+    tag_id = cursor.fetchone()[0]
+    if order == "asc":
+        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, tags_pets t, animal s where p.species = s.id and t.tag = {tag_id} and t.pet = p.id order by p.{oby}")
+    else:
+        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, tags_pets t, animal s where p.species = s.id and t.tag = {tag_id} and t.pet = p.id order by p.{oby} desc")
+    pets = cursor.fetchall()
+    return render_template("search.html", pets = pets, field = field, value = value, order="desc" if order=="asc" else "asc")
 
 @bp.route("/")
 def dashboard():
@@ -28,9 +39,9 @@ def dashboard():
     oby = request.args.get("order_by", "id") # TODO. This is currently not used. 
     order = request.args.get("order", "asc")
     if order == "asc":
-        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, animal s where p.species = s.id order by p.id")
+        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, animal s where p.species = s.id order by p.{oby}")
     else:
-        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, animal s where p.species = s.id order by p.id desc")
+        cursor.execute(f"select p.id, p.name, p.bought, p.sold, s.name from pet p, animal s where p.species = s.id order by p.{oby} desc")
     pets = cursor.fetchall()
     return render_template('index.html', pets = pets, order="desc" if order=="asc" else "asc")
 
@@ -74,7 +85,10 @@ def edit(pid):
     elif request.method == "POST":
         description = request.form.get('description')
         sold = request.form.get("sold")
-        # TODO Handle sold
+        if(sold):
+            sold = datetime.datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("update pet set description=?, sold=? where id=?", [description, sold, pid])
+        conn.commit()
         return redirect(url_for("pets.pet_info", pid=pid), 302)
         
     
